@@ -272,35 +272,10 @@
 </head>
 <body>
 
-<!-- SETUP SCREEN (Firebase 설정) -->
-<div id="setupScreen" class="setup-screen">
+<!-- SETUP SCREEN (사용하지 않음 - Firebase 설정 내장됨) -->
+<div id="setupScreen" class="setup-screen" style="display:none;">
   <div class="setup-card">
-    <div style="text-align:center;font-size:48px;margin-bottom:12px;">🔧</div>
-    <h2>초기 설정</h2>
-    <p class="subtitle">Firebase 프로젝트 정보를 입력하세요.<br>한 번만 설정하면 됩니다.</p>
-    <div class="setup-field">
-      <label>API Key</label>
-      <input type="text" id="setupApiKey" placeholder="AIzaSy...">
-    </div>
-    <div class="setup-field">
-      <label>Project ID</label>
-      <input type="text" id="setupProjectId" placeholder="my-project-12345">
-      <div class="hint">Firebase Console → 프로젝트 설정에서 확인</div>
-    </div>
-    <div class="setup-field">
-      <label>App ID</label>
-      <input type="text" id="setupAppId" placeholder="1:123456:web:abcdef">
-    </div>
-    <button class="btn btn-primary" onclick="saveFirebaseConfig()" style="margin-top:12px;">
-      ✅ 설정 완료 및 시작
-    </button>
-    <div style="margin-top:16px;padding:16px;background:#f0f9ff;border-radius:10px;">
-      <p style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
-        <strong>Firebase 설정 방법:</strong><br>
-        1. <a href="https://console.firebase.google.com" target="_blank">Firebase Console</a> 접속<br>
-        2. 프로젝트 만들기 → 웹 앱 추가<br>
-        3. Firestore Database 생성 (테스트 모드)<br>
-        4. 위 정보를 여기에 붙여넣기
+    <p>Firebase 설정이 내장되어 있습니다.</p>
       </p>
     </div>
   </div>
@@ -453,8 +428,9 @@
       <div class="card">
         <div class="settings-section">
           <h4>🔗 Firebase 연결 정보</h4>
-          <p style="font-size:13px;color:var(--text-secondary);line-height:1.8;" id="firebaseInfo"></p>
-          <button class="btn btn-outline btn-sm" onclick="resetFirebaseConfig()" style="margin-top:8px;">Firebase 설정 초기화</button>
+          <p style="font-size:13px;color:var(--text-secondary);line-height:1.8;" id="firebaseInfo">
+            Project: <strong>slideconference</strong><br>상태: 내장 설정 사용 중
+          </p>
         </div>
       </div>
 
@@ -1161,15 +1137,17 @@ function showToast(msg) {
 // ============================================================
 // INIT
 // ============================================================
+// Firebase 설정값 내장 — 접속 시 별도 입력 불필요
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBDeLkQAex-y_vSniKaewbGOBn7cDDLAHQ",
+  authDomain: "slideconference.firebaseapp.com",
+  projectId: "slideconference",
+  appId: "1:503637107516:web:3abe8684da8a1464edf439"
+};
+
 (function init() {
-  const config = getFirebaseConfig();
-  if (config) {
-    document.getElementById('setupScreen').style.display = 'none';
-    initFirebase(config);
-  } else {
-    document.getElementById('setupScreen').style.display = 'flex';
-    document.getElementById('loginScreen').classList.add('hidden');
-  }
+  document.getElementById('setupScreen').style.display = 'none';
+  initFirebase(FIREBASE_CONFIG);
 })();
 </script>
 </body>
