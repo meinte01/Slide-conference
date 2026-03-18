@@ -811,42 +811,85 @@ function parseOCRResult() {
   const text = document.getElementById('ocrResult').value;
   if (!text.trim()) { showToast('OCR 결과가 비어있습니다'); return; }
 
+  // 하이픈/물결표 변형 통일
+  const normalizedText = text.replace(/[–—ー~]/g, '-');
+
   // ── 검사번호: 연도S-000000 또는 연도SC-000000 ──
-  const normalizedText = text.replace(/[–—ー]/g, '-');
-  const idMatch = normalizedText.match(/\d{0,4}\s*S\s*C?\s*[-]\s*\d{4,8}/i);
+  // 공백/OCR노이즈 허용: "26S -020027", "26S-020027", "26 S-020027"
+  const idMatch = normalizedText.match(/\d{2,4}\s*S\s*C?\s*-\s*\d{4,8}/i);
   if (idMatch) {
     document.getElementById('fieldSpecimenId').value = idMatch[0].replace(/\s+/g, '').toUpperCase();
   }
 
-  // ── 나이/성별: "숫자/성별" ──
-  const ageGenderMatch = normalizedText.match(/(\d{1,3})\s*[\/\\]\s*([MmFf])/);
-  if (ageGenderMatch) {
-    document.getElementById('fieldAge').value = ageGenderMatch[1];
-    document.getElementById('fieldGender').value = ageGenderMatch[2].toUpperCase();
-  } else {
-    const genderAgeMatch = normalizedText.match(/([MmFf])\s*[\/\\]\s*(\d{1,3})/);
-    if (genderAgeMatch) {
-      document.getElementById('fieldGender').value = genderAgeMatch[1].toUpperCase();
-      document.getElementById('fieldAge').value = genderAgeMatch[2];
-    } else {
-      const ageOnly = text.match(/(\d{1,3})\s*(?:세|yo|y\/o|[yY]ears?|살)/);
-      if (ageOnly) document.getElementById('fieldAge').value = ageOnly[1];
-      if (/\b(남|[Mm]ale)\b/.test(text)) document.getElementById('fieldGender').value = 'M';
-      else if (/\b(여|[Ff]emale)\b/.test(text)) document.getElementById('fieldGender').value = 'F';
+  // ── 나이/성별 ──
+  let ageFound = false, genderFound = false;
+
+  // 패턴1: "58/남", "65/여" — 한국어 성별 (실제 병리 의뢰지 형식)
+  const ageKorGender = normalizedText.match(/(\d{1,3})\s*[\/\\]\s*(남|여)/);
+  if (ageKorGender) {
+    document.getElementById('fieldAge').value = ageKorGender[1];
+    document.getElementById('fieldGender').value = ageKorGender[2] === '남' ? 'M' : 'F';
+    ageFound = true; genderFound = true;
+  }
+
+  // 패턴2: "58/M", "65/F" — 영문 성별
+  if (!ageFound) {
+    const ageEngGender = normalizedText.match(/(\d{1,3})\s*[\/\\]\s*([MmFf])/);
+    if (ageEngGender) {
+      document.getElementById('fieldAge').value = ageEngGender[1];
+      document.getElementById('fieldGender').value = ageEngGender[2].toUpperCase();
+      ageFound = true; genderFound = true;
     }
   }
 
-  // ── 장기 키워드 ──
+  // 패턴3: 역순 "M/65", "F/72"
+  if (!ageFound) {
+    const genderAge = normalizedText.match(/([MmFf])\s*[\/\\]\s*(\d{1,3})/);
+    if (genderAge) {
+      document.getElementById('fieldGender').value = genderAge[1].toUpperCase();
+      document.getElementById('fieldAge').value = genderAge[2];
+      ageFound = true; genderFound = true;
+    }
+  }
+
+  // 패턴4: 괄호 안 "(58/tH)" — OCR이 한글 성별을 오인식한 경우
+  // 숫자/뒤에 아무 글자가 와도 일단 나이는 추출
+  if (!ageFound) {
+    const ageBracket = normalizedText.match(/\((\d{1,3})\s*[\/\\]\s*(\S{1,4})\)/);
+    if (ageBracket) {
+      document.getElementById('fieldAge').value = ageBracket[1];
+      ageFound = true;
+      const genderPart = ageBracket[2];
+      if (/남|[Mm]/.test(genderPart)) { document.getElementById('fieldGender').value = 'M'; genderFound = true; }
+      else if (/여|[Ff]/.test(genderPart)) { document.getElementById('fieldGender').value = 'F'; genderFound = true; }
+    }
+  }
+
+  // 패턴5: 단독 나이 "65세", "65yo"
+  if (!ageFound) {
+    const ageOnly = text.match(/(\d{1,3})\s*(?:세|yo|y\/o|[yY]ears?|살)/);
+    if (ageOnly) document.getElementById('fieldAge').value = ageOnly[1];
+  }
+
+  // 단독 성별 키워드
+  if (!genderFound) {
+    if (/남|[Mm]ale/.test(text)) document.getElementById('fieldGender').value = 'M';
+    else if (/여|[Ff]emale/.test(text)) document.getElementById('fieldGender').value = 'F';
+  }
+
+  // ── 장기 키워드 (긴 이름 우선 매칭) ──
   const organs = [
-    'Lymph node','Small intestine','Salivary gland','Soft tissue',
-    'Liver','Kidney','Lung','Breast','Colon','Stomach','Thyroid',
+    'Nasal cavity','Lymph node','Small intestine','Salivary gland','Soft tissue','Oral cavity',
+    'Nasal','Sinus','Liver','Kidney','Lung','Breast','Colon','Stomach','Thyroid',
     'Pancreas','Prostate','Uterus','Ovary','Brain','Skin',
     'Bone','Bladder','Esophagus','Appendix','Gallbladder',
     'Spleen','Heart','Tonsil','Rectum','Larynx','Cervix',
     'Endometrium','Placenta','Testis','Adrenal',
-    '림프절','소장','침샘','연부조직','간','신장','폐','유방','대장','위','갑상선',
-    '췌장','전립선','자궁','난소','뇌','피부','뼈','방광','식도','충수','담낭',
-    '비장','심장','편도','직장','후두','자궁경부','자궁내막','태반','고환','부신'
+    '비강','부비동','림프절','소장','침샘','연부조직','구강',
+    '간','신장','폐','유방','대장','위','갑상선',
+    '췌장','전립선','자궁','난소','뇌','피부','뼈','방광',
+    '식도','충수','담낭','비장','심장','편도','직장','후두',
+    '자궁경부','자궁내막','태반','고환','부신'
   ];
   for (const organ of organs) {
     if (text.toLowerCase().includes(organ.toLowerCase())) {
