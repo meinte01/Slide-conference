@@ -811,14 +811,22 @@ function parseOCRResult() {
   const text = document.getElementById('ocrResult').value;
   if (!text.trim()) { showToast('OCR 결과가 비어있습니다'); return; }
 
-  // 하이픈/물결표 변형 통일
-  const normalizedText = text.replace(/[–—ー~]/g, '-');
+  // 모든 종류의 하이픈/대시/물결표를 일반 하이픈으로 통일
+  const normalizedText = text.replace(/[–—ー~\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFF0D]/g, '-');
 
-  // ── 검사번호: 연도S-000000 또는 연도SC-000000 ──
-  // 공백/OCR노이즈 허용: "26S -020027", "26S-020027", "26 S-020027"
-  const idMatch = normalizedText.match(/\d{2,4}\s*S\s*C?\s*-\s*\d{4,8}/i);
+  // ── 검사번호: 연도S-숫자 또는 연도SC-숫자 ──
+  // 공백, 줄바꿈, 특수문자 모두 무시하고 매칭
+  // 예: "26S-020027", "26S -020027", "26S - 020027", "26 S -020027"
+  const idMatch = normalizedText.match(/(\d{2,4})\s*S\s*C?[\s\-]*(\d{4,8})/i);
   if (idMatch) {
-    document.getElementById('fieldSpecimenId').value = idMatch[0].replace(/\s+/g, '').toUpperCase();
+    // 연도 + S/SC + - + 숫자로 조합
+    const yearPart = idMatch[1];
+    const numPart = idMatch[2];
+    // 원본에서 SC인지 S인지 확인
+    const fullMatch = idMatch[0].toUpperCase();
+    const hasC = /S\s*C/i.test(fullMatch);
+    const cleanId = yearPart + (hasC ? 'SC-' : 'S-') + numPart;
+    document.getElementById('fieldSpecimenId').value = cleanId;
   }
 
   // ── 나이/성별 ──
