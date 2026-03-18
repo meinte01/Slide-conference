@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>병리과 슬라이드 컨퍼런스 케이스 관리</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --warning: #f59e0b;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #1e293b;
+    --text-secondary: #64748b;
+    --border: #e2e8f0;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .header {
+    background: var(--primary);
+    color: white;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  .header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+
+  .role-badge {
+    font-size: 11px; padding: 4px 10px; border-radius: 20px;
+    font-weight: 600; cursor: pointer; border: none; transition: all 0.2s;
+  }
+  .role-badge.admin { background: #fbbf24; color: #92400e; }
+  .role-badge.resident { background: #86efac; color: #14532d; }
+
+  .sync-indicator {
+    font-size: 11px; padding: 4px 10px; border-radius: 20px;
+    font-weight: 600; background: #86efac; color: #14532d;
+  }
+  .sync-indicator.offline { background: #fecaca; color: #991b1b; }
+  .sync-indicator.syncing { background: #fef3c7; color: #92400e; }
+
+  /* Login */
+  .login-screen {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh; padding: 20px;
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  }
+  .login-card {
+    background: white; border-radius: 20px; padding: 40px 32px;
+    max-width: 400px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    text-align: center;
+  }
+  .login-card .icon { font-size: 48px; margin-bottom: 16px; }
+  .login-card h2 { font-size: 22px; margin-bottom: 8px; color: var(--text); }
+  .login-card p { color: var(--text-secondary); font-size: 14px; margin-bottom: 28px; }
+
+  .pin-input { display: flex; gap: 10px; justify-content: center; margin-bottom: 24px; }
+  .pin-input input {
+    width: 48px; height: 56px; text-align: center; font-size: 24px;
+    font-weight: 700; border: 2px solid var(--border); border-radius: 12px;
+    outline: none; transition: border-color 0.2s;
+  }
+  .pin-input input:focus { border-color: var(--primary); }
+
+  .login-buttons { display: flex; flex-direction: column; gap: 12px; }
+  .login-btn {
+    padding: 14px; border: none; border-radius: 12px; font-size: 16px;
+    font-weight: 600; cursor: pointer; transition: all 0.2s;
+  }
+  .login-btn.admin-login { background: var(--primary); color: white; }
+  .login-btn.resident-login { background: #f1f5f9; color: var(--text); border: 2px solid var(--border); }
+  .login-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+
+  /* Setup Screen */
+  .setup-screen {
+    display: none; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh; padding: 20px;
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  }
+  .setup-card {
+    background: white; border-radius: 20px; padding: 32px;
+    max-width: 520px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  }
+  .setup-card h2 { text-align: center; margin-bottom: 8px; }
+  .setup-card .subtitle { text-align: center; color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; }
+  .setup-field { margin-bottom: 16px; }
+  .setup-field label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+  .setup-field input {
+    width: 100%; padding: 12px 14px; border: 2px solid var(--border);
+    border-radius: 10px; font-size: 14px; outline: none; font-family: 'SF Mono', monospace;
+  }
+  .setup-field input:focus { border-color: var(--primary); }
+  .setup-field .hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+
+  /* Tabs */
+  .tab-nav {
+    display: flex; background: white; border-bottom: 1px solid var(--border); overflow-x: auto;
+  }
+  .tab-btn {
+    flex: 1; padding: 14px 12px; border: none; background: none; font-size: 13px;
+    font-weight: 600; color: var(--text-secondary); cursor: pointer;
+    border-bottom: 3px solid transparent; transition: all 0.2s; white-space: nowrap;
+  }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .tab-btn .tab-icon { display: block; font-size: 20px; margin-bottom: 4px; }
+
+  .main { max-width: 800px; margin: 0 auto; padding: 16px; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .card {
+    background: var(--card); border-radius: var(--radius); padding: 20px;
+    margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .card h3 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+  /* Camera */
+  .camera-area {
+    position: relative; background: #000; border-radius: var(--radius);
+    overflow: hidden; aspect-ratio: 4/3; margin-bottom: 16px;
+  }
+  .camera-area video, .camera-area img { width: 100%; height: 100%; object-fit: cover; }
+  .camera-area canvas { display: none; }
+
+  .camera-controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 16px; }
+  .cam-btn {
+    width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
+    font-size: 22px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .cam-btn.capture {
+    background: var(--danger); color: white; width: 68px; height: 68px;
+    border: 4px solid white; box-shadow: 0 0 0 3px var(--danger);
+  }
+  .cam-btn.secondary { background: white; color: var(--text); }
+
+  .ocr-progress { display: none; margin: 16px 0; }
+  .ocr-progress.active { display: block; }
+  .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .progress-bar .fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s; width: 0%; }
+  .ocr-status { font-size: 13px; color: var(--text-secondary); }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 12px 14px; border: 2px solid var(--border); border-radius: 10px;
+    font-size: 15px; outline: none; transition: border-color 0.2s; background: white; -webkit-appearance: none;
+  }
+  .form-group input:focus, .form-group select:focus { border-color: var(--primary); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 24px; border: none; border-radius: 10px; font-size: 15px;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-outline { background: white; color: var(--text); border: 2px solid var(--border); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-sm { padding: 8px 14px; font-size: 13px; width: auto; }
+
+  /* Case Items */
+  .case-item {
+    padding: 16px; border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 10px; background: white; transition: all 0.2s;
+  }
+  .case-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .case-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .case-id { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 14px; font-weight: 700; color: var(--primary); }
+  .case-id.masked { color: var(--text-secondary); }
+  .case-date { font-size: 12px; color: var(--text-secondary); }
+
+  .case-details { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .case-tag { font-size: 12px; padding: 4px 10px; border-radius: 6px; background: #f1f5f9; color: var(--text-secondary); font-weight: 500; }
+  .case-tag.organ { background: #ede9fe; color: #5b21b6; }
+  .case-tag.gender { background: #fce7f3; color: #9d174d; }
+  .case-tag.age { background: #ecfdf5; color: #065f46; }
+  .case-tag.submitter { background: #fff7ed; color: #9a3412; }
+
+  .case-actions { display: flex; gap: 6px; margin-top: 10px; }
+  .case-actions button {
+    padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: white; cursor: pointer; font-weight: 500; transition: all 0.15s;
+  }
+  .case-actions button:hover { background: #f1f5f9; }
+  .case-actions button.select-btn { background: var(--primary); color: white; border: none; }
+  .case-actions button.selected-btn { background: var(--success); color: white; border: none; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
+  .stat-card .value { font-size: 28px; font-weight: 800; color: var(--primary); }
+  .stat-card .label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-bar input, .filter-bar select {
+    padding: 10px 14px; border: 2px solid var(--border); border-radius: 10px;
+    font-size: 14px; outline: none; flex: 1; min-width: 120px;
+  }
+
+  .export-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .ocr-result {
+    width: 100%; min-height: 120px; padding: 12px; border: 2px solid var(--border);
+    border-radius: 10px; font-size: 14px; font-family: inherit; resize: vertical; outline: none; margin-bottom: 12px;
+  }
+  .ocr-result:focus { border-color: var(--primary); }
+
+  .toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(100px);
+    background: #1e293b; color: white; padding: 12px 24px; border-radius: 12px;
+    font-size: 14px; font-weight: 500; z-index: 1000; transition: transform 0.3s ease;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--text-secondary); }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 15px; }
+
+  .settings-section { margin-bottom: 24px; }
+  .settings-section h4 { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 200; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal { background: white; border-radius: 16px; padding: 24px; max-width: 500px; width: 100%; max-height: 80vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 16px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-actions .btn { flex: 1; }
+
+  .conference-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  .selected-count { font-size: 14px; font-weight: 600; color: var(--primary); background: #eff6ff; padding: 6px 14px; border-radius: 20px; }
+  .confirm-text { font-size: 15px; line-height: 1.6; color: var(--text); margin-bottom: 8px; }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 480px) {
+    .header h1 { font-size: 15px; }
+    .main { padding: 12px; }
+    .form-row { grid-template-columns: 1fr; }
+    .filter-bar { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SETUP SCREEN (Firebase 설정) -->
+<div id="setupScreen" class="setup-screen">
+  <div class="setup-card">
+    <div style="text-align:center;font-size:48px;margin-bottom:12px;">🔧</div>
+    <h2>초기 설정</h2>
+    <p class="subtitle">Firebase 프로젝트 정보를 입력하세요.<br>한 번만 설정하면 됩니다.</p>
+    <div class="setup-field">
+      <label>API Key</label>
+      <input type="text" id="setupApiKey" placeholder="AIzaSy...">
+    </div>
+    <div class="setup-field">
+      <label>Project ID</label>
+      <input type="text" id="setupProjectId" placeholder="my-project-12345">
+      <div class="hint">Firebase Console → 프로젝트 설정에서 확인</div>
+    </div>
+    <div class="setup-field">
+      <label>App ID</label>
+      <input type="text" id="setupAppId" placeholder="1:123456:web:abcdef">
+    </div>
+    <button class="btn btn-primary" onclick="saveFirebaseConfig()" style="margin-top:12px;">
+      ✅ 설정 완료 및 시작
+    </button>
+    <div style="margin-top:16px;padding:16px;background:#f0f9ff;border-radius:10px;">
+      <p style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+        <strong>Firebase 설정 방법:</strong><br>
+        1. <a href="https://console.firebase.google.com" target="_blank">Firebase Console</a> 접속<br>
+        2. 프로젝트 만들기 → 웹 앱 추가<br>
+        3. Firestore Database 생성 (테스트 모드)<br>
+        4. 위 정보를 여기에 붙여넣기
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" class="login-screen hidden">
+  <div class="login-card">
+    <div class="icon">🔬</div>
+    <h2>슬라이드 컨퍼런스</h2>
+    <p>병리과 케이스 관리 시스템</p>
+
+    <div id="pinSection" class="hidden">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">관리자 PIN 4자리를 입력하세요</p>
+      <div class="pin-input" id="pinInput">
+        <input type="password" maxlength="1" inputmode="numeric" data-idx="0">
+        <input type="password" maxlength="1" inputmode="numeric" data-idx="1">
+        <input type="password" maxlength="1" inputmode="numeric" data-idx="2">
+        <input type="password" maxlength="1" inputmode="numeric" data-idx="3">
+      </div>
+      <p id="pinError" style="color:var(--danger);font-size:13px;margin-bottom:12px;" class="hidden">PIN이 올바르지 않습니다</p>
+      <button class="btn btn-outline" onclick="showLoginMain()" style="margin-top:8px;">뒤로</button>
+    </div>
+
+    <div id="loginMain" class="login-buttons">
+      <button class="login-btn admin-login" onclick="showPinEntry()">🔑 관리자 로그인 (교수)</button>
+      <button class="login-btn resident-login" onclick="loginAsResident()">👨‍⚕️ 전공의 접속</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" class="hidden">
+  <header class="header">
+    <h1>🔬 슬라이드 컨퍼런스</h1>
+    <div class="header-actions">
+      <span class="sync-indicator" id="syncIndicator">● 연결됨</span>
+      <button class="role-badge" id="roleBadge" onclick="logout()"></button>
+    </div>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="capture"><span class="tab-icon">📷</span>촬영/등록</button>
+    <button class="tab-btn" data-tab="list"><span class="tab-icon">📋</span>케이스 목록</button>
+    <button class="tab-btn" data-tab="conference"><span class="tab-icon">🎯</span>컨퍼런스</button>
+    <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span>설정</button>
+  </nav>
+
+  <div class="main">
+    <!-- TAB: CAPTURE -->
+    <div class="tab-content active" id="tab-capture">
+      <div class="card">
+        <h3>📷 사진 촬영 / 업로드</h3>
+        <div class="camera-area" id="cameraArea">
+          <video id="cameraVideo" autoplay playsinline></video>
+          <img id="capturedImage" class="hidden" />
+          <canvas id="cameraCanvas"></canvas>
+        </div>
+        <div class="camera-controls">
+          <button class="cam-btn secondary" onclick="toggleCamera()" title="카메라 전환">🔄</button>
+          <button class="cam-btn capture" onclick="capturePhoto()" title="촬영">📸</button>
+          <button class="cam-btn secondary" onclick="uploadPhoto()" title="갤러리">🖼️</button>
+          <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFileUpload(event)">
+        </div>
+        <div class="ocr-progress" id="ocrProgress">
+          <span class="ocr-status" id="ocrStatus">OCR 처리 중...</span>
+          <div class="progress-bar"><div class="fill" id="ocrFill"></div></div>
+        </div>
+        <div id="ocrResultSection" class="hidden">
+          <div class="form-group">
+            <label>OCR 인식 결과 (수정 가능)</label>
+            <textarea class="ocr-result" id="ocrResult" placeholder="인식된 텍스트가 여기에 표시됩니다..."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="parseOCRResult()" style="margin-bottom:16px;">✨ 자동 필드 채우기</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📝 케이스 정보</h3>
+        <div class="form-group">
+          <label>검사번호 *</label>
+          <input type="text" id="fieldSpecimenId" placeholder="예: 24S-123456, 24SC-001234">
+        </div>
+        <div class="form-group">
+          <label>장기 *</label>
+          <input type="text" id="fieldOrgan" placeholder="예: Liver, Kidney, Lung">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>성별 *</label>
+            <select id="fieldGender"><option value="">선택</option><option value="M">남 (M)</option><option value="F">여 (F)</option></select>
+          </div>
+          <div class="form-group">
+            <label>나이 *</label>
+            <input type="number" id="fieldAge" placeholder="예: 65" min="0" max="150">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>제출자 *</label>
+          <input type="text" id="fieldSubmitter" placeholder="예: 홍길동 R3">
+        </div>
+        <div class="form-group">
+          <label>메모 (선택)</label>
+          <input type="text" id="fieldMemo" placeholder="간단한 메모">
+        </div>
+        <button class="btn btn-primary" onclick="saveCase()">💾 케이스 저장</button>
+      </div>
+    </div>
+
+    <!-- TAB: LIST -->
+    <div class="tab-content" id="tab-list">
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="🔍 검색 (장기, 제출자...)" oninput="renderCaseList()">
+        <select id="filterSubmitter" onchange="renderCaseList()"><option value="">전체 제출자</option></select>
+      </div>
+      <div id="caseList"></div>
+    </div>
+
+    <!-- TAB: CONFERENCE -->
+    <div class="tab-content" id="tab-conference">
+      <div class="card">
+        <div class="conference-header">
+          <h3 style="margin-bottom:0;">🎯 컨퍼런스 케이스 선별</h3>
+          <span class="selected-count" id="selectedCount">0건 선택</span>
+        </div>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+          목록에서 케이스를 선택하면 이번 주 컨퍼런스에 포함됩니다.
+        </p>
+        <div id="conferenceList"></div>
+        <div class="export-btns" style="margin-top:16px;">
+          <button class="btn btn-success btn-sm" onclick="exportConferenceList()">📄 선택 케이스 내보내기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: SETTINGS -->
+    <div class="tab-content" id="tab-settings">
+      <div class="card" id="adminSettings">
+        <div class="settings-section">
+          <h4>🔒 관리자 PIN 변경</h4>
+          <div class="form-group">
+            <label>새 PIN (4자리)</label>
+            <input type="password" id="newPin" maxlength="4" inputmode="numeric" placeholder="새 PIN 입력">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="changePin()">PIN 변경</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="settings-section">
+          <h4>🔗 Firebase 연결 정보</h4>
+          <p style="font-size:13px;color:var(--text-secondary);line-height:1.8;" id="firebaseInfo"></p>
+          <button class="btn btn-outline btn-sm" onclick="resetFirebaseConfig()" style="margin-top:8px;">Firebase 설정 초기화</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="settings-section">
+          <h4>💾 데이터 관리</h4>
+          <div class="export-btns" style="flex-direction:column;">
+            <button class="btn btn-outline btn-sm" onclick="exportAllData()">📥 전체 데이터 내보내기 (JSON)</button>
+            <button class="btn btn-outline btn-sm" onclick="exportToCSV()">📊 CSV로 내보내기</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="settings-section">
+          <h4>ℹ️ 시스템 정보</h4>
+          <p style="font-size:13px;color:var(--text-secondary);line-height:1.8;">
+            버전: 2.0 (Firebase 실시간 동기화)<br>
+            OCR 엔진: Tesseract.js 5.0<br>
+            지원 언어: 한국어, 영어<br>
+            데이터: Firebase Firestore (실시간 공유)
+          </p>
+        </div>
+      </div>
+
+      <div class="card" id="dangerZone">
+        <div class="settings-section">
+          <h4 style="color:var(--danger);">⚠️ 위험 영역</h4>
+          <button class="btn btn-danger btn-sm" onclick="confirmClearAll()">모든 데이터 삭제</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalContent"></div></div>
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+const DEFAULT_PIN = '1234';
+let firebaseDB = null;
+let currentRole = null;
+let cameraStream = null;
+let facingMode = 'environment';
+let allCases = [];
+let selectedCaseIds = new Set();
+let unsubscribe = null; // Firestore listener
+
+// ============================================================
+// FIREBASE CONFIG
+// ============================================================
+function getFirebaseConfig() {
+  const raw = localStorage.getItem('firebase_config');
+  return raw ? JSON.parse(raw) : null;
+}
+
+function saveFirebaseConfig() {
+  const apiKey = document.getElementById('setupApiKey').value.trim();
+  const projectId = document.getElementById('setupProjectId').value.trim();
+  const appId = document.getElementById('setupAppId').value.trim();
+
+  if (!apiKey || !projectId || !appId) {
+    showToast('모든 필드를 입력해주세요');
+    return;
+  }
+
+  const config = { apiKey, authDomain: projectId + '.firebaseapp.com', projectId, appId };
+  localStorage.setItem('firebase_config', JSON.stringify(config));
+  initFirebase(config);
+}
+
+function resetFirebaseConfig() {
+  if (confirm('Firebase 설정을 초기화하시겠습니까?')) {
+    localStorage.removeItem('firebase_config');
+    location.reload();
+  }
+}
+
+function initFirebase(config) {
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(config);
+    }
+    firebaseDB = firebase.firestore();
+
+    // Enable offline persistence
+    firebaseDB.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      console.log('Persistence error (ok if already enabled):', err.code);
+    });
+
+    // Show login
+    document.getElementById('setupScreen').style.display = 'none';
+    document.getElementById('loginScreen').classList.remove('hidden');
+
+    // Update settings info
+    document.getElementById('firebaseInfo').innerHTML =
+      'Project: <strong>' + config.projectId + '</strong><br>상태: 연결됨';
+
+    showToast('Firebase 연결 성공!');
+  } catch (err) {
+    showToast('Firebase 연결 실패: ' + err.message);
+    console.error(err);
+  }
+}
+
+// ============================================================
+// FIRESTORE CRUD
+// ============================================================
+function casesRef() {
+  return firebaseDB.collection('conference_cases');
+}
+
+function configRef() {
+  return firebaseDB.collection('app_config').doc('settings');
+}
+
+async function fsAdd(record) {
+  await casesRef().doc(record.id).set(record);
+}
+
+async function fsPut(record) {
+  await casesRef().doc(record.id).set(record, { merge: true });
+}
+
+async function fsDelete(id) {
+  await casesRef().doc(id).delete();
+}
+
+async function fsClearAll() {
+  const snap = await casesRef().get();
+  const batch = firebaseDB.batch();
+  snap.docs.forEach(doc => batch.delete(doc.ref));
+  await batch.commit();
+}
+
+// Real-time listener
+function startRealtimeSync() {
+  if (unsubscribe) unsubscribe();
+
+  const indicator = document.getElementById('syncIndicator');
+  indicator.textContent = '● 동기화 중...';
+  indicator.className = 'sync-indicator syncing';
+
+  unsubscribe = casesRef().orderBy('date', 'desc').onSnapshot(
+    (snapshot) => {
+      allCases = snapshot.docs.map(doc => doc.data());
+      selectedCaseIds = new Set(allCases.filter(c => c.selected).map(c => c.id));
+
+      // Update submitter filter
+      const submitters = [...new Set(allCases.map(c => c.submitter))];
+      const select = document.getElementById('filterSubmitter');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">전체 제출자</option>' +
+        submitters.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+      select.value = currentVal;
+
+      renderCaseList();
+      renderConferenceList();
+
+      indicator.textContent = '● 연결됨';
+      indicator.className = 'sync-indicator';
+    },
+    (error) => {
+      console.error('Firestore listener error:', error);
+      indicator.textContent = '● 오프라인';
+      indicator.className = 'sync-indicator offline';
+    }
+  );
+}
+
+// ============================================================
+// PIN (stored in Firestore for shared access)
+// ============================================================
+async function getPin() {
+  try {
+    const doc = await configRef().get();
+    if (doc.exists && doc.data().pin) return doc.data().pin;
+  } catch(e) { console.log('PIN fetch error, using default'); }
+  return localStorage.getItem('conf_admin_pin') || DEFAULT_PIN;
+}
+
+async function setPin(pin) {
+  localStorage.setItem('conf_admin_pin', pin);
+  try { await configRef().set({ pin }, { merge: true }); } catch(e) { console.log('PIN save to Firestore failed'); }
+}
+
+// ============================================================
+// LOGIN
+// ============================================================
+function showPinEntry() {
+  document.getElementById('loginMain').classList.add('hidden');
+  document.getElementById('pinSection').classList.remove('hidden');
+  document.getElementById('pinError').classList.add('hidden');
+  const inputs = document.querySelectorAll('#pinInput input');
+  inputs.forEach(i => i.value = '');
+  inputs[0].focus();
+}
+
+function showLoginMain() {
+  document.getElementById('loginMain').classList.remove('hidden');
+  document.getElementById('pinSection').classList.add('hidden');
+}
+
+document.querySelectorAll('#pinInput input').forEach((input, idx, arr) => {
+  input.addEventListener('input', async (e) => {
+    if (e.target.value.length === 1 && idx < 3) arr[idx + 1].focus();
+    if (idx === 3 && e.target.value.length === 1) {
+      const pin = Array.from(arr).map(i => i.value).join('');
+      const correctPin = await getPin();
+      if (pin === correctPin) {
+        loginAsAdmin();
+      } else {
+        document.getElementById('pinError').classList.remove('hidden');
+        arr.forEach(i => i.value = '');
+        arr[0].focus();
+      }
+    }
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace' && !e.target.value && idx > 0) arr[idx - 1].focus();
+  });
+});
+
+function loginAsAdmin() { currentRole = 'admin'; enterApp(); }
+function loginAsResident() { currentRole = 'resident'; enterApp(); }
+
+function logout() {
+  stopCamera();
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  currentRole = null;
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  showLoginMain();
+}
+
+function enterApp() {
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+
+  const badge = document.getElementById('roleBadge');
+  if (currentRole === 'admin') {
+    badge.textContent = '👨‍🏫 관리자';
+    badge.className = 'role-badge admin';
+    document.getElementById('adminSettings').classList.remove('hidden');
+    document.getElementById('dangerZone').classList.remove('hidden');
+  } else {
+    badge.textContent = '👨‍⚕️ 전공의';
+    badge.className = 'role-badge resident';
+    document.getElementById('adminSettings').classList.add('hidden');
+    document.getElementById('dangerZone').classList.add('hidden');
+  }
+
+  startRealtimeSync();
+  startCamera();
+}
+
+// ============================================================
+// TABS
+// ============================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ============================================================
+// CAMERA
+// ============================================================
+async function startCamera() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 960 } }
+    });
+    const video = document.getElementById('cameraVideo');
+    video.srcObject = cameraStream;
+    video.classList.remove('hidden');
+    document.getElementById('capturedImage').classList.add('hidden');
+  } catch (err) { console.log('Camera not available:', err); }
+}
+
+function stopCamera() {
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+}
+
+async function toggleCamera() {
+  stopCamera();
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  await startCamera();
+}
+
+function capturePhoto() {
+  const video = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('cameraCanvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/png');
+  document.getElementById('capturedImage').src = dataUrl;
+  document.getElementById('capturedImage').classList.remove('hidden');
+  video.classList.add('hidden');
+  stopCamera();
+  runOCR(dataUrl);
+}
+
+function uploadPhoto() { document.getElementById('fileInput').click(); }
+
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    document.getElementById('capturedImage').src = ev.target.result;
+    document.getElementById('capturedImage').classList.remove('hidden');
+    document.getElementById('cameraVideo').classList.add('hidden');
+    stopCamera();
+    runOCR(ev.target.result);
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function resetCapture() {
+  document.getElementById('capturedImage').classList.add('hidden');
+  document.getElementById('ocrResultSection').classList.add('hidden');
+  document.getElementById('ocrProgress').classList.remove('active');
+  startCamera();
+}
+
+// ============================================================
+// OCR
+// ============================================================
+async function runOCR(imageSource) {
+  const progressEl = document.getElementById('ocrProgress');
+  const statusEl = document.getElementById('ocrStatus');
+  const fillEl = document.getElementById('ocrFill');
+  const resultSection = document.getElementById('ocrResultSection');
+
+  progressEl.classList.add('active');
+  resultSection.classList.add('hidden');
+  statusEl.textContent = 'OCR 엔진 초기화 중...';
+  fillEl.style.width = '10%';
+
+  try {
+    const worker = await Tesseract.createWorker('kor+eng', 1, {
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round(m.progress * 100);
+          fillEl.style.width = (10 + pct * 0.85) + '%';
+          statusEl.textContent = '텍스트 인식 중... ' + pct + '%';
+        }
+      }
+    });
+    const { data } = await worker.recognize(imageSource);
+    await worker.terminate();
+    fillEl.style.width = '100%';
+    statusEl.textContent = '인식 완료!';
+    document.getElementById('ocrResult').value = data.text;
+    resultSection.classList.remove('hidden');
+    setTimeout(() => progressEl.classList.remove('active'), 1500);
+  } catch (err) {
+    statusEl.textContent = 'OCR 오류: ' + err.message;
+    fillEl.style.width = '0%';
+  }
+}
+
+// ============================================================
+// PARSE OCR → FORM FIELDS
+// ============================================================
+function parseOCRResult() {
+  const text = document.getElementById('ocrResult').value;
+  if (!text.trim()) { showToast('OCR 결과가 비어있습니다'); return; }
+
+  // ── 검사번호: 연도S-000000 또는 연도SC-000000 ──
+  const normalizedText = text.replace(/[–—ー]/g, '-');
+  const idMatch = normalizedText.match(/\d{0,4}\s*S\s*C?\s*[-]\s*\d{4,8}/i);
+  if (idMatch) {
+    document.getElementById('fieldSpecimenId').value = idMatch[0].replace(/\s+/g, '').toUpperCase();
+  }
+
+  // ── 나이/성별: "숫자/성별" ──
+  const ageGenderMatch = normalizedText.match(/(\d{1,3})\s*[\/\\]\s*([MmFf])/);
+  if (ageGenderMatch) {
+    document.getElementById('fieldAge').value = ageGenderMatch[1];
+    document.getElementById('fieldGender').value = ageGenderMatch[2].toUpperCase();
+  } else {
+    const genderAgeMatch = normalizedText.match(/([MmFf])\s*[\/\\]\s*(\d{1,3})/);
+    if (genderAgeMatch) {
+      document.getElementById('fieldGender').value = genderAgeMatch[1].toUpperCase();
+      document.getElementById('fieldAge').value = genderAgeMatch[2];
+    } else {
+      const ageOnly = text.match(/(\d{1,3})\s*(?:세|yo|y\/o|[yY]ears?|살)/);
+      if (ageOnly) document.getElementById('fieldAge').value = ageOnly[1];
+      if (/\b(남|[Mm]ale)\b/.test(text)) document.getElementById('fieldGender').value = 'M';
+      else if (/\b(여|[Ff]emale)\b/.test(text)) document.getElementById('fieldGender').value = 'F';
+    }
+  }
+
+  // ── 장기 키워드 ──
+  const organs = [
+    'Lymph node','Small intestine','Salivary gland','Soft tissue',
+    'Liver','Kidney','Lung','Breast','Colon','Stomach','Thyroid',
+    'Pancreas','Prostate','Uterus','Ovary','Brain','Skin',
+    'Bone','Bladder','Esophagus','Appendix','Gallbladder',
+    'Spleen','Heart','Tonsil','Rectum','Larynx','Cervix',
+    'Endometrium','Placenta','Testis','Adrenal',
+    '림프절','소장','침샘','연부조직','간','신장','폐','유방','대장','위','갑상선',
+    '췌장','전립선','자궁','난소','뇌','피부','뼈','방광','식도','충수','담낭',
+    '비장','심장','편도','직장','후두','자궁경부','자궁내막','태반','고환','부신'
+  ];
+  for (const organ of organs) {
+    if (text.toLowerCase().includes(organ.toLowerCase())) {
+      document.getElementById('fieldOrgan').value = organ;
+      break;
+    }
+  }
+
+  showToast('필드가 자동 채워졌습니다. 확인 후 수정해주세요.');
+}
+
+// ============================================================
+// CASE CRUD (Firestore)
+// ============================================================
+async function saveCase() {
+  const specimenId = document.getElementById('fieldSpecimenId').value.trim();
+  const organ = document.getElementById('fieldOrgan').value.trim();
+  const gender = document.getElementById('fieldGender').value;
+  const age = document.getElementById('fieldAge').value.trim();
+  const submitter = document.getElementById('fieldSubmitter').value.trim();
+  const memo = document.getElementById('fieldMemo').value.trim();
+
+  if (!specimenId || !organ || !gender || !age || !submitter) {
+    showToast('필수 항목을 모두 입력해주세요');
+    return;
+  }
+
+  const record = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    specimenId, organ, gender,
+    age: parseInt(age),
+    submitter, memo,
+    date: new Date().toISOString(),
+    selected: false
+  };
+
+  try {
+    await fsAdd(record);
+    ['fieldSpecimenId','fieldOrgan','fieldGender','fieldAge','fieldSubmitter','fieldMemo']
+      .forEach(id => { const el = document.getElementById(id); el.tagName === 'SELECT' ? el.value = '' : el.value = ''; });
+    showToast('케이스가 저장되었습니다 ✓');
+    resetCapture();
+  } catch(err) {
+    showToast('저장 실패: ' + err.message);
+  }
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function maskSpecimenId(id) {
+  if (!id) return '****';
+  const parts = id.split('-');
+  if (parts.length === 2) return parts[0] + '-' + '*'.repeat(parts[1].length);
+  return id.substring(0, 3) + '*'.repeat(Math.max(0, id.length - 3));
+}
+
+function renderCaseList() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const submitterFilter = document.getElementById('filterSubmitter').value;
+
+  let filtered = allCases.filter(c => {
+    const matchSearch = !search ||
+      c.organ.toLowerCase().includes(search) ||
+      c.submitter.toLowerCase().includes(search) ||
+      (c.memo && c.memo.toLowerCase().includes(search)) ||
+      (currentRole === 'admin' && c.specimenId.toLowerCase().includes(search));
+    return matchSearch && (!submitterFilter || c.submitter === submitterFilter);
+  });
+
+  document.getElementById('statsGrid').innerHTML = `
+    <div class="stat-card"><div class="value">${allCases.length}</div><div class="label">전체 케이스</div></div>
+    <div class="stat-card"><div class="value">${selectedCaseIds.size}</div><div class="label">컨퍼런스 선택</div></div>
+    <div class="stat-card"><div class="value">${new Set(allCases.map(c=>c.submitter)).size}</div><div class="label">제출자 수</div></div>
+    <div class="stat-card"><div class="value">${new Set(allCases.map(c=>c.organ)).size}</div><div class="label">장기 종류</div></div>
+  `;
+
+  if (filtered.length === 0) {
+    document.getElementById('caseList').innerHTML = '<div class="empty-state"><div class="icon">📂</div><p>등록된 케이스가 없습니다.</p></div>';
+    return;
+  }
+
+  document.getElementById('caseList').innerHTML = filtered.map(c => {
+    const displayId = currentRole === 'admin' ? c.specimenId : maskSpecimenId(c.specimenId);
+    const idClass = currentRole === 'admin' ? 'case-id' : 'case-id masked';
+    const isSelected = selectedCaseIds.has(c.id);
+    const dateStr = new Date(c.date).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="case-item">
+        <div class="case-header">
+          <span class="${idClass}">${displayId}</span>
+          <span class="case-date">${dateStr}</span>
+        </div>
+        <div class="case-details">
+          <span class="case-tag organ">${c.organ}</span>
+          <span class="case-tag gender">${c.gender === 'M' ? '남' : '여'}</span>
+          <span class="case-tag age">${c.age}세</span>
+          <span class="case-tag submitter">${c.submitter}</span>
+          ${c.memo ? '<span class="case-tag">' + c.memo + '</span>' : ''}
+        </div>
+        <div class="case-actions">
+          <button class="${isSelected ? 'selected-btn' : 'select-btn'}" onclick="toggleSelect('${c.id}')">
+            ${isSelected ? '✓ 선택됨' : '선택'}
+          </button>
+          ${currentRole === 'admin' ? `
+            <button onclick="editCase('${c.id}')">수정</button>
+            <button onclick="deleteCase('${c.id}')">삭제</button>
+          ` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderConferenceList() {
+  const selected = allCases.filter(c => c.selected);
+  document.getElementById('selectedCount').textContent = selected.length + '건 선택';
+
+  if (selected.length === 0) {
+    document.getElementById('conferenceList').innerHTML = '<div class="empty-state"><div class="icon">🎯</div><p>선택된 케이스가 없습니다.</p></div>';
+    return;
+  }
+
+  document.getElementById('conferenceList').innerHTML = selected.map((c, i) => {
+    const displayId = currentRole === 'admin' ? c.specimenId : maskSpecimenId(c.specimenId);
+    return `
+      <div class="case-item">
+        <div class="case-header">
+          <span class="case-id" style="font-size:13px;">#${i+1} ${displayId}</span>
+          <button onclick="toggleSelect('${c.id}')" style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;">제외</button>
+        </div>
+        <div class="case-details">
+          <span class="case-tag organ">${c.organ}</span>
+          <span class="case-tag gender">${c.gender === 'M' ? '남' : '여'}</span>
+          <span class="case-tag age">${c.age}세</span>
+          <span class="case-tag submitter">${c.submitter}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ============================================================
+// CASE ACTIONS
+// ============================================================
+async function toggleSelect(id) {
+  const c = allCases.find(x => x.id === id);
+  if (!c) return;
+  c.selected = !c.selected;
+  await fsPut(c);
+}
+
+function editCase(id) {
+  const c = allCases.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('modalContent').innerHTML = `
+    <h3>✏️ 케이스 수정</h3>
+    <div class="form-group"><label>검사번호</label><input type="text" id="editSpecimenId" value="${c.specimenId}"></div>
+    <div class="form-group"><label>장기</label><input type="text" id="editOrgan" value="${c.organ}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>성별</label><select id="editGender"><option value="M" ${c.gender==='M'?'selected':''}>남</option><option value="F" ${c.gender==='F'?'selected':''}>여</option></select></div>
+      <div class="form-group"><label>나이</label><input type="number" id="editAge" value="${c.age}"></div>
+    </div>
+    <div class="form-group"><label>제출자</label><input type="text" id="editSubmitter" value="${c.submitter}"></div>
+    <div class="form-group"><label>메모</label><input type="text" id="editMemo" value="${c.memo || ''}"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveEdit('${c.id}')">저장</button>
+    </div>`;
+  openModal();
+}
+
+async function saveEdit(id) {
+  const c = allCases.find(x => x.id === id);
+  if (!c) return;
+  c.specimenId = document.getElementById('editSpecimenId').value.trim();
+  c.organ = document.getElementById('editOrgan').value.trim();
+  c.gender = document.getElementById('editGender').value;
+  c.age = parseInt(document.getElementById('editAge').value);
+  c.submitter = document.getElementById('editSubmitter').value.trim();
+  c.memo = document.getElementById('editMemo').value.trim();
+  await fsPut(c);
+  closeModal();
+  showToast('수정되었습니다');
+}
+
+function deleteCase(id) {
+  document.getElementById('modalContent').innerHTML = `
+    <h3>🗑️ 삭제 확인</h3>
+    <p class="confirm-text">이 케이스를 삭제하시겠습니까?</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">취소</button>
+      <button class="btn btn-danger" onclick="confirmDelete('${id}')">삭제</button>
+    </div>`;
+  openModal();
+}
+
+async function confirmDelete(id) {
+  await fsDelete(id);
+  closeModal();
+  showToast('삭제되었습니다');
+}
+
+function confirmClearAll() {
+  document.getElementById('modalContent').innerHTML = `
+    <h3>⚠️ 전체 데이터 삭제</h3>
+    <p class="confirm-text">모든 케이스 데이터가 영구적으로 삭제됩니다.<br>이 작업은 되돌릴 수 없습니다.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">취소</button>
+      <button class="btn btn-danger" onclick="doClearAll()">전체 삭제</button>
+    </div>`;
+  openModal();
+}
+
+async function doClearAll() {
+  await fsClearAll();
+  closeModal();
+  showToast('모든 데이터가 삭제되었습니다');
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+function exportAllData() {
+  const data = JSON.stringify(allCases, null, 2);
+  downloadFile(data, 'conference_data_' + formatDate() + '.json', 'application/json');
+}
+
+function exportToCSV() {
+  const headers = ['검사번호','장기','성별','나이','제출자','메모','등록일','컨퍼런스선택'];
+  const rows = allCases.map(c => [
+    currentRole === 'admin' ? c.specimenId : maskSpecimenId(c.specimenId),
+    c.organ, c.gender === 'M' ? '남':'여', c.age, c.submitter,
+    c.memo || '', new Date(c.date).toLocaleDateString('ko-KR'), c.selected ? 'O' : ''
+  ]);
+  const csv = '\uFEFF' + [headers, ...rows].map(r => r.map(v => '"'+v+'"').join(',')).join('\n');
+  downloadFile(csv, 'conference_cases_' + formatDate() + '.csv', 'text/csv;charset=utf-8');
+}
+
+function exportConferenceList() {
+  const selected = allCases.filter(c => c.selected);
+  if (!selected.length) { showToast('선택된 케이스가 없습니다'); return; }
+  const headers = ['번호','검사번호','장기','성별','나이','제출자'];
+  const rows = selected.map((c, i) => [
+    i+1, currentRole === 'admin' ? c.specimenId : maskSpecimenId(c.specimenId),
+    c.organ, c.gender === 'M' ? '남':'여', c.age, c.submitter
+  ]);
+  const csv = '\uFEFF' + [headers, ...rows].map(r => r.map(v => '"'+v+'"').join(',')).join('\n');
+  downloadFile(csv, 'conference_selected_' + formatDate() + '.csv', 'text/csv;charset=utf-8');
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+async function changePin() {
+  const pin = document.getElementById('newPin').value.trim();
+  if (!/^\d{4}$/.test(pin)) { showToast('PIN은 숫자 4자리여야 합니다'); return; }
+  await setPin(pin);
+  document.getElementById('newPin').value = '';
+  showToast('PIN이 변경되었습니다');
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+function formatDate() {
+  const d = new Date();
+  return d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0');
+}
+
+function openModal() { document.getElementById('modalOverlay').classList.add('active'); }
+function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
+document.getElementById('modalOverlay').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeModal(); });
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+(function init() {
+  const config = getFirebaseConfig();
+  if (config) {
+    document.getElementById('setupScreen').style.display = 'none';
+    initFirebase(config);
+  } else {
+    document.getElementById('setupScreen').style.display = 'flex';
+    document.getElementById('loginScreen').classList.add('hidden');
+  }
+})();
+</script>
+</body>
+</html>
